@@ -12,11 +12,24 @@
 package org.opensearch.knn.index.memory;
 
 import com.google.common.cache.CacheStats;
+import org.apache.lucene.store.Directory;
+import org.apache.lucene.store.IndexInput;
 import org.junit.After;
 import org.junit.Before;
+import lombok.SneakyThrows;
+import org.junit.Before;
+import org.junit.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest;
+import org.opensearch.cluster.service.ClusterService;
+import org.opensearch.common.settings.ClusterSettings;
+import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.knn.KNNSingleNodeTestCase;
+import org.opensearch.knn.TestUtils;
 import org.opensearch.knn.common.exception.OutOfNativeMemoryException;
+import org.opensearch.knn.common.featureflags.KNNFeatureFlags;
 import org.opensearch.knn.index.KNNSettings;
 import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.plugin.KNNPlugin;
@@ -26,19 +39,31 @@ import org.opensearch.threadpool.Scheduler.Cancellable;
 import org.opensearch.threadpool.ThreadPool;
 
 import java.io.IOException;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.spy;
 import static org.opensearch.knn.index.memory.NativeMemoryCacheManager.GRAPH_COUNT;
 import static org.opensearch.knn.plugin.stats.StatNames.GRAPH_MEMORY_USAGE;
+import static org.opensearch.search.SearchService.CLUSTER_CONCURRENT_SEGMENT_SEARCH_SETTING;
 
-public class NativeMemoryCacheManagerTests extends OpenSearchSingleNodeTestCase {
+public class NativeMemoryCacheManagerTests extends KNNSingleNodeTestCase {
 
     private ThreadPool threadPool;
+
+    private boolean knnForceEvictCacheEnabled = false;
+
 
     @Before
     public void setUp() throws Exception {
@@ -47,10 +72,24 @@ public class NativeMemoryCacheManagerTests extends OpenSearchSingleNodeTestCase 
         NativeMemoryCacheManager.setThreadPool(threadPool);
     }
 
+    public void enableForceEviction() throws ExecutionException, InterruptedException {
+        Settings circuitBreakerSettings = Settings.builder().put(KNNFeatureFlags.KNN_FORCE_EVICT_CACHE_ENABLED_SETTING.getKey(), true).build();
+        client().admin().cluster().prepareUpdateSettings().setPersistentSettings(circuitBreakerSettings).get();
+        ensureGreen();
+        knnForceEvictCacheEnabled = true;
+    }
+
+    public void disableForceEviction() throws ExecutionException, InterruptedException {
+        Settings circuitBreakerSettings = Settings.builder().putNull(KNNFeatureFlags.KNN_FORCE_EVICT_CACHE_ENABLED_SETTING.getKey()).build();
+        client().admin().cluster().prepareUpdateSettings().setPersistentSettings(circuitBreakerSettings).get();
+        ensureGreen();
+        knnForceEvictCacheEnabled = false;
+    }
+
     @After
     public void shutdown() throws Exception {
-        super.tearDown();
         terminate(threadPool);
+        tearDown();
     }
 
     @Override
@@ -499,6 +538,217 @@ public class NativeMemoryCacheManagerTests extends OpenSearchSingleNodeTestCase 
         nativeMemoryCacheManager.close();
         assertTrue(maintenanceTask.isCancelled());
     }
+//
+
+    @Test
+    public void checkFeatureFlag() throws ExecutionException, InterruptedException {
+        enableForceEviction();
+        assertTrue(KNNFeatureFlags.isForceEvictCacheEnabled());
+        disableForceEviction();
+    }
+
+    @SneakyThrows
+//    @Test
+    public void testGet() {
+        NativeMemoryCacheManager nativeMemoryCacheManager = new NativeMemoryCacheManager();
+        Map<String, Map<String, Object>> indicesStats = nativeMemoryCacheManager.getIndicesCacheStats();
+        assertTrue(indicesStats.isEmpty());
+
+        String indexName1 = "test-index-1";
+        String testKey1 = "test-1";
+        int size1 = 3;
+        NativeMemoryAllocation.IndexAllocation indexAllocation1 = new NativeMemoryAllocation.IndexAllocation(
+                null,
+                0,
+                size1,
+                null,
+                testKey1,
+                indexName1
+        );
+
+        NativeMemoryLoadStrategy.IndexLoadStrategy indexLoadStrategy = mock(NativeMemoryLoadStrategy.IndexLoadStrategy.class);
+        NativeMemoryEntryContext.IndexEntryContext indexEntryContext1 = spy(
+                new NativeMemoryEntryContext.IndexEntryContext(
+                        (Directory) null,
+                        TestUtils.createFakeNativeMamoryCacheKey("test"),
+                        indexLoadStrategy,
+                        null,
+                        "test"
+                )
+        );
+
+        doReturn(indexAllocation1).when(indexEntryContext1).load();
+
+        doReturn(0).when(indexEntryContext1).calculateSizeInKB();
+        Directory mockDirectory = mock(Directory.class);
+        IndexInput mockReadStream = mock(IndexInput.class);
+        when(mockDirectory.openInput(any(), any())).thenReturn(mockReadStream);
+        // Add this line to handle the fileLength call
+        when(mockDirectory.fileLength(any())).thenReturn(1024L); // 1KB for testing
+        doReturn(mockDirectory).when(indexEntryContext1).getDirectory();
+
+
+
+        assertFalse(indexEntryContext1.isIndexGraphFileOpened());
+        // Add debug verifications
+//        doAnswer(invocation -> {
+//            System.out.println("openVectorIndex called"); // Debug print
+//            return invocation.callRealMethod();
+//        }).when(indexEntryContext1).openVectorIndex();
+        assertEquals(indexAllocation1, nativeMemoryCacheManager.get(indexEntryContext1,false));
+        // try-with-resources will anyway close the resources opened by indexEntryContext1
+        assertFalse(indexEntryContext1.isIndexGraphFileOpened());
+        assertEquals(indexAllocation1, nativeMemoryCacheManager.get(indexEntryContext1,false));
+
+        verify(mockDirectory, times(2)).openInput(any(), any());
+        verify(mockReadStream, times(2)).seek(0);
+        verify(mockReadStream, times(2)).close();
+
+
+    }
+
+    @SneakyThrows
+//    @Test
+    public void getWithForceEvictEnabled() {
+
+        NativeMemoryCacheManager nativeMemoryCacheManager = new NativeMemoryCacheManager();
+
+        String testKey1 = "test-1";
+        String indexName1 = "test-index-1";
+        int size1 = 3;
+
+        NativeMemoryAllocation.IndexAllocation indexAllocation1 = new NativeMemoryAllocation.IndexAllocation(
+                null,
+                0,
+                size1,
+                null,
+                testKey1,
+                indexName1
+        );
+
+        NativeMemoryLoadStrategy.IndexLoadStrategy indexLoadStrategy = mock(NativeMemoryLoadStrategy.IndexLoadStrategy.class);
+        NativeMemoryEntryContext.IndexEntryContext indexEntryContext1 = spy(
+                new NativeMemoryEntryContext.IndexEntryContext(
+                        (Directory) null,
+                        TestUtils.createFakeNativeMamoryCacheKey("test"),
+                        indexLoadStrategy,
+                        null,
+                        "test"
+                )
+        );
+
+        doReturn(indexAllocation1).when(indexEntryContext1).load();
+        doReturn(0).when(indexEntryContext1).calculateSizeInKB();
+        Directory mockDirectory = mock(Directory.class);
+        IndexInput mockReadStream = mock(IndexInput.class);
+        when(mockDirectory.openInput(any(), any())).thenReturn(mockReadStream);
+        when(mockDirectory.fileLength(any())).thenReturn(1024L);
+        doReturn(mockDirectory).when(indexEntryContext1).getDirectory();
+
+        assertFalse(indexEntryContext1.isIndexGraphFileOpened());
+        enableForceEviction();
+        assertEquals(indexAllocation1, nativeMemoryCacheManager.get(indexEntryContext1,false));
+        // In force evict path, the file should stay open since it's not in a try-with-resources
+        assertTrue(indexEntryContext1.isIndexGraphFileOpened());
+        // disableForceEviction();
+
+        assertEquals(indexAllocation1, nativeMemoryCacheManager.get(indexEntryContext1,false));
+        assertTrue(indexEntryContext1.isIndexGraphFileOpened());
+
+        // Should only be called once since second call is a cache hit
+        verify(mockDirectory, times(1)).openInput(any(), any());
+        verify(mockReadStream, times(1)).seek(0);
+        // Since we're not closing in try-with-resources, close shouldn't be called
+        verify(mockReadStream, never()).close();
+        disableForceEviction();
+    }
+
+
+//    @Test
+//    @SneakyThrows
+//    public void testConcurrentVectorIndexOpening() {
+//        int numThreads = 5;
+//        CountDownLatch startLatch = new CountDownLatch(1);
+//        CountDownLatch completionLatch = new CountDownLatch(numThreads);
+//        AtomicInteger openVectorIndexCalls = new AtomicInteger(0);
+//
+//        NativeMemoryCacheManager nativeMemoryCacheManager = new NativeMemoryCacheManager();
+//
+//        // Create test allocation
+//        NativeMemoryAllocation.IndexAllocation indexAllocation = new NativeMemoryAllocation.IndexAllocation(
+//                null, 0, 3, null, "test-1", "test-index-1"
+//        );
+//
+//        // Create and set up the spy context that will be shared across threads
+//        NativeMemoryLoadStrategy.IndexLoadStrategy indexLoadStrategy = mock(NativeMemoryLoadStrategy.IndexLoadStrategy.class);
+//        NativeMemoryEntryContext.IndexEntryContext sharedContext = spy(
+//                new NativeMemoryEntryContext.IndexEntryContext(
+//                        (Directory) null,
+//                        TestUtils.createFakeNativeMamoryCacheKey("test"),
+//                        indexLoadStrategy,
+//                        null,
+//                        "test"
+//                )
+//        );
+//
+//        // Set up mocks
+//        doReturn(indexAllocation).when(sharedContext).load();
+//        doReturn(0).when(sharedContext).calculateSizeInKB();
+//        Directory mockDirectory = mock(Directory.class);
+//        IndexInput mockReadStream = mock(IndexInput.class);
+//        when(mockDirectory.openInput(any(), any())).thenReturn(mockReadStream);
+//        when(mockDirectory.fileLength(any())).thenReturn(1024L);
+//        doReturn(mockDirectory).when(sharedContext).getDirectory();
+//
+//        // Add a delay in openVectorIndex to make concurrent access more likely
+//        doAnswer(invocation -> {
+//            openVectorIndexCalls.incrementAndGet();
+//            // Add a small delay to simulate work
+//            Thread.sleep(1000);
+//            return invocation.callRealMethod();
+//        }).when(sharedContext).openVectorIndex();
+//
+//        // enable force eviction
+//        enableForceEviction();
+//
+//        // Create threads that will try to get the same context concurrently
+//        List<Thread> threads = new ArrayList<>();
+//        for (int i = 0; i < numThreads; i++) {
+//            Thread t = new Thread(() -> {
+//                try {
+//                    startLatch.await(); // Wait for all threads to be ready
+//                    nativeMemoryCacheManager.get(sharedContext, false);
+//                } catch (Exception e) {
+//                    e.printStackTrace();
+//                } finally {
+//                    completionLatch.countDown();
+//                }
+//            });
+//            threads.add(t);
+//            t.start();
+//        }
+//
+//        startLatch.countDown();
+//
+//        // Wait for all threads to complete
+//        completionLatch.await();
+//
+//        // openVectorIndex is called for each of the threads
+//        verify(sharedContext, times(numThreads)).openVectorIndex();
+//        assertEquals(numThreads, openVectorIndexCalls.get());
+//
+//        // but opening of the indexInput and seek only happens once, since rest of the threads will wait for first
+//        // thread
+//        verify(mockDirectory, times(1)).openInput(any(), any());
+//        verify(mockReadStream, times(1)).seek(0);
+//
+//        // cleanup feature flag
+//        disableForceEviction();
+//    }
+
+
+
+
 
     private static class TestNativeMemoryAllocation implements NativeMemoryAllocation {
 

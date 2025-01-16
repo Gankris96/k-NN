@@ -35,12 +35,9 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Manages native memory allocations made by JNI.
@@ -56,6 +53,7 @@ public class NativeMemoryCacheManager implements Closeable {
 
     private Cache<String, NativeMemoryAllocation> cache;
     private Deque<String> accessRecencyQueue;
+    private final ConcurrentHashMap<String, ReentrantLock> indexLocks = new ConcurrentHashMap<>();
     private final ExecutorService executor;
     private AtomicBoolean cacheCapacityReached;
     private long maxWeight;
@@ -346,8 +344,21 @@ public class NativeMemoryCacheManager implements Closeable {
             // Cache Miss
             // Evict before put
             // open the graph file before proceeding to load the graph into memory
+            ReentrantLock indexFileLock = indexLocks.computeIfAbsent(key, k -> new ReentrantLock());
+            indexFileLock.lock();
             nativeMemoryEntryContext.openVectorIndex();
+            indexFileLock.unlock();
+            if (!indexFileLock.hasQueuedThreads()) {
+                indexLocks.remove(key, indexFileLock);
+            }
             synchronized (this) {
+                // recheck if another thread already loaded this entry into the cache
+                result = cache.getIfPresent(key);
+                if (result != null) {
+                    accessRecencyQueue.remove(key);
+                    accessRecencyQueue.addLast(key);
+                    return result;
+                }
                 if (getCacheSizeInKilobytes() + nativeMemoryEntryContext.calculateSizeInKB() >= maxWeight) {
                     Iterator<String> lruIterator = accessRecencyQueue.iterator();
                     while (lruIterator.hasNext()
