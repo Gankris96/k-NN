@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/Volumes/workplace/opensource/k-NN/jni/googletest-download/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
