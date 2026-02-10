@@ -149,7 +149,7 @@ public class FlatVectorsScorerProvider {
 
                     @Override
                     public void prefetch(int[] prefetchOrds) throws IOException {
-                        LOG.info("DOING PREFETCH in HammingFlatVectorsScorer");
+                        // LOG.info("DOING PREFETCH in HammingFlatVectorsScorer");
                         byteVectorValues.prefetch(prefetchOrds);
                     }
                 };

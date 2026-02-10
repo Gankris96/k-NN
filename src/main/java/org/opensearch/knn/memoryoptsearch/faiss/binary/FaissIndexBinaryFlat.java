@@ -89,7 +89,7 @@ public class FaissIndexBinaryFlat extends FaissBinaryIndex {
             public void prefetch(final int[] ordsToPrefetch) throws IOException {
                 if (ordsToPrefetch == null) return;
                 for (int i = 0; i < ordsToPrefetch.length; i++) {
-                    long offset = (long) ordsToPrefetch[i] * codeSize;
+                    long offset = binaryFlatVectorSection.getBaseOffset() + (long) ordsToPrefetch[i] * codeSize;
                     indexInput.prefetch(offset, codeSize);
                 }
             }

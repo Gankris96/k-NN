@@ -98,7 +98,7 @@ public class FaissIndexFloatFlat extends FaissIndex {
 
                 // 1. calculate offset and prefetch immediately
                 for (int i = 0; i < ordsToPrefetch.length; i++) {
-                    long offset = (long) ordsToPrefetch[i] * oneVectorByteSize;
+                    long offset = floatVectors.getBaseOffset() + (long) ordsToPrefetch[i] * oneVectorByteSize;
                     indexInput.prefetch(offset, oneVectorByteSize);
                 }
             }
