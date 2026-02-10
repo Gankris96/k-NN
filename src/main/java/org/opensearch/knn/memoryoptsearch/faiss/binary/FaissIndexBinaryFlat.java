@@ -84,6 +84,15 @@ public class FaissIndexBinaryFlat extends FaissBinaryIndex {
             public ByteVectorValues copy() {
                 return new ByteVectorValuesImpl(indexInput.clone());
             }
+
+            // 32x quantized vector prefetch for disk mode indices
+            public void prefetch(final int[] ordsToPrefetch) throws IOException {
+                if (ordsToPrefetch == null) return;
+                for (int i = 0; i < ordsToPrefetch.length; i++) {
+                    long offset = (long) ordsToPrefetch[i] * codeSize;
+                    indexInput.prefetch(offset, codeSize);
+                }
+            }
         }
 
         return new ByteVectorValuesImpl(indexInput);

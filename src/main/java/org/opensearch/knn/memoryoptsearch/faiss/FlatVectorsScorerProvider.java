@@ -146,6 +146,12 @@ public class FlatVectorsScorerProvider {
                         final byte[] quantizedByteVector = byteVectorValues.vectorValue(internalVectorId);
                         return KNNVectorSimilarityFunction.HAMMING.compare(target, quantizedByteVector);
                     }
+
+                    @Override
+                    public void prefetch(int[] prefetchOrds) throws IOException {
+                        LOG.info("DOING PREFETCH in DefaultFlatVectorScorer");
+                        byteVectorValues.prefetch(prefetchOrds);
+                    }
                 };
             }
 
