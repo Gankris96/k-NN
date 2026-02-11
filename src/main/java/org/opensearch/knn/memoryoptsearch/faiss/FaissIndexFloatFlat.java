@@ -7,6 +7,7 @@ package org.opensearch.knn.memoryoptsearch.faiss;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.index.ByteVectorValues;
 import org.apache.lucene.index.FloatVectorValues;
 import org.apache.lucene.index.VectorEncoding;
@@ -23,6 +24,7 @@ import java.util.function.Supplier;
  * The total storage size is calculated as `4 * dimension * number_of_vectors`, where `4` is the size of a float.
  * Please refer to IndexFlatL2 and IndexFlatIp in <a href="https://github.com/facebookresearch/faiss/blob/main/faiss/IndexFlat.h">...</a>.
  */
+@Log4j2
 public class FaissIndexFloatFlat extends FaissIndex {
     // Flat format for L2 metric
     public static final String IXF2 = "IxF2";
@@ -94,6 +96,7 @@ public class FaissIndexFloatFlat extends FaissIndex {
             }
 
             public void prefetch(final int[] ordsToPrefetch) throws IOException {
+                log.debug("Prefetching the float vectors");
                 if (ordsToPrefetch == null) return;
 
                 // 1. calculate offset and prefetch immediately

@@ -248,6 +248,7 @@ public class ExactSearcher {
                 segmentLevelQuantizationInfo
             );
         }
+        prefetchVectorData(matchedDocs, (KNNFloatVectorValues) vectorValues);
         return new VectorIdsKNNIterator(
             matchedDocs,
             exactSearcherContext.getFloatQueryVector(),
@@ -256,6 +257,19 @@ public class ExactSearcher {
             quantizedQueryVector,
             segmentLevelQuantizationInfo
         );
+    }
+
+    /**
+     * Prefetches vector data for all candidate doc IDs from the matched docs iterator.
+     * This issues prefetch hints so the OS can start loading vector pages from disk
+     * before the scoring loop begins.
+     */
+    private void prefetchVectorData(final DocIdSetIterator matchedDocs, final KNNFloatVectorValues vectorValues) throws IOException {
+        log.info("prefetch the actual vector data -- implemented");
+        if (matchedDocs instanceof TopDocsDISI topDocsDISI) {
+            vectorValues.prefetchByDocIds(topDocsDISI.getSortedDocIds());
+        }
+        log.info("prefetch the actual vector data -- completed");
     }
 
     /**

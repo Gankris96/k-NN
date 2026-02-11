@@ -6,6 +6,7 @@
 package org.opensearch.knn.memoryoptsearch.faiss.binary;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.index.ByteVectorValues;
 import org.apache.lucene.index.FloatVectorValues;
 import org.apache.lucene.index.VectorEncoding;
@@ -23,6 +24,7 @@ import java.io.IOException;
  * Note: Binary vectors stored within this format should be compared using Hamming distance only.
  * See <a href="https://github.com/facebookresearch/faiss/blob/main/faiss/IndexBinaryFlat.h">...</a> for more details.
  */
+@Log4j2
 public class FaissIndexBinaryFlat extends FaissBinaryIndex {
     public static final String IBXF = "IBxF";
 
@@ -87,6 +89,7 @@ public class FaissIndexBinaryFlat extends FaissBinaryIndex {
 
             // 32x quantized vector prefetch for disk mode indices
             public void prefetch(final int[] ordsToPrefetch) throws IOException {
+                log.debug("Prefetching the faiss index binary flat vectors");
                 if (ordsToPrefetch == null) return;
                 for (int i = 0; i < ordsToPrefetch.length; i++) {
                     long offset = binaryFlatVectorSection.getBaseOffset() + (long) ordsToPrefetch[i] * codeSize;
