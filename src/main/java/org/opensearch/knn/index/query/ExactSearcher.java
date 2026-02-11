@@ -265,11 +265,11 @@ public class ExactSearcher {
      * before the scoring loop begins.
      */
     private void prefetchVectorData(final DocIdSetIterator matchedDocs, final KNNFloatVectorValues vectorValues) throws IOException {
-        log.info("prefetch the actual vector data -- implemented");
+        log.debug("prefetch the actual vector data -- implemented");
         if (matchedDocs instanceof TopDocsDISI topDocsDISI) {
             vectorValues.prefetchByDocIds(topDocsDISI.getSortedDocIds());
         }
-        log.info("prefetch the actual vector data -- completed");
+        log.debug("prefetch the actual vector data -- completed");
     }
 
     /**
