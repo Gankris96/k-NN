@@ -19,7 +19,9 @@ import org.apache.lucene.util.BitSet;
 import org.apache.lucene.util.BitSetIterator;
 import org.apache.lucene.util.Bits;
 import org.opensearch.knn.index.query.KNNWeight;
+import org.opensearch.knn.index.query.TopDocsDISI;
 import org.opensearch.knn.index.query.iterators.GroupedNestedDocIdSetIterator;
+import org.opensearch.knn.index.vectorvalues.KNNVectorValues;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -182,5 +184,43 @@ public class QueryUtils {
             }
         };
         return BitSet.of(filterIterator, maxDoc);
+    }
+
+    /**
+     * Converts a BitSet to an int array containing all set bit positions.
+     *
+     * @param bitSet the BitSet to convert
+     * @return array of document IDs corresponding to set bits
+     */
+    public static int[] bitSetToIntArray(final BitSet bitSet) {
+        final int cardinality = bitSet.cardinality();
+        final int[] intArray = new int[cardinality];
+        final BitSetIterator bitSetIterator = new BitSetIterator(bitSet, cardinality);
+        int index = 0;
+        int docId = bitSetIterator.nextDoc();
+        while (docId != DocIdSetIterator.NO_MORE_DOCS) {
+            intArray[index++] = docId;
+            docId = bitSetIterator.nextDoc();
+        }
+        return intArray;
+    }
+
+    /**
+     * Prefetches vector data if the iterator is TopDocsDISI or BitSetIterator.
+     *
+     * @param docIdSetIterator the iterator to check
+     * @param vectorValues the vector values to prefetch
+     * @throws IOException if an I/O error occurs during prefetch
+     */
+    public static void maybePrefetch(final DocIdSetIterator docIdSetIterator, final KNNVectorValues<?> vectorValues) throws IOException {
+        int[] docIdsToPrefetch = null;
+        if (docIdSetIterator instanceof TopDocsDISI topDocsDISI) {
+            docIdsToPrefetch = topDocsDISI.getSortedDocIds();
+        } else if (docIdSetIterator instanceof BitSetIterator bitSetIterator) {
+            docIdsToPrefetch = bitSetToIntArray(bitSetIterator.getBitSet());
+        }
+        if (docIdsToPrefetch != null) {
+            vectorValues.prefetchByDocIds(docIdsToPrefetch);
+        }
     }
 }

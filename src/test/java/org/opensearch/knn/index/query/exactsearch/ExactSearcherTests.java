@@ -18,6 +18,8 @@ import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.util.BitSetIterator;
+import org.apache.lucene.util.FixedBitSet;
 import org.apache.lucene.util.StringHelper;
 import org.apache.lucene.util.Version;
 import org.mockito.MockedStatic;
@@ -383,6 +385,7 @@ public class ExactSearcherTests extends KNNTestCase {
 
             final DocIdSetIterator regularIterator = DocIdSetIterator.all(2);
 
+            // No docIdsToPrefetch provided
             final ExactSearcher.ExactSearcherContext context = ExactSearcher.ExactSearcherContext.builder()
                 .matchedDocsIterator(regularIterator)
                 .numberOfMatchedDocs(2)
@@ -445,6 +448,87 @@ public class ExactSearcherTests extends KNNTestCase {
             exactSearcher.searchLeaf(leafReaderContext, context);
 
             verify(floatVectorValues, never()).prefetchByDocIds(any());
+        }
+    }
+
+    @SneakyThrows
+    public void testPrefetchVectorData_whenBitSetIteratorProvided_thenPrefetchCalled() {
+        try (MockedStatic<KNNVectorValuesFactory> valuesFactoryMockedStatic = Mockito.mockStatic(KNNVectorValuesFactory.class)) {
+            // Setup mocks for filtered search case with BitSetIterator
+            final float[] queryVector = new float[] { 0.1f, 2.0f, 3.0f };
+            final SpaceType spaceType = SpaceType.L2;
+            final List<float[]> dataVectors = Arrays.asList(new float[] { 1.0f, 2.0f, 3.0f }, new float[] { 4.0f, 5.0f, 6.0f });
+
+            // Create a BitSet with doc IDs 0 and 1
+            final FixedBitSet bitSet = new FixedBitSet(10);
+            bitSet.set(0);
+            bitSet.set(1);
+            final BitSetIterator bitSetIterator = new BitSetIterator(bitSet, 2);
+
+            // Provide BitSetIterator for filtered search
+            final ExactSearcher.ExactSearcherContext context = ExactSearcher.ExactSearcherContext.builder()
+                .matchedDocsIterator(bitSetIterator)
+                .numberOfMatchedDocs(2)
+                .k(2)
+                .field(FIELD_NAME)
+                .floatQueryVector(queryVector)
+                .build();
+
+            final LeafReaderContext leafReaderContext = mock(LeafReaderContext.class);
+            final SegmentReader reader = mock(SegmentReader.class);
+            when(leafReaderContext.reader()).thenReturn(reader);
+
+            final FSDirectory directory = mock(FSDirectory.class);
+            when(reader.directory()).thenReturn(directory);
+            final SegmentInfo segmentInfo = new SegmentInfo(
+                directory,
+                Version.LATEST,
+                Version.LATEST,
+                SEGMENT_NAME,
+                100,
+                false,
+                false,
+                KNNCodecVersion.CURRENT_DEFAULT,
+                Map.of(),
+                new byte[StringHelper.ID_LENGTH],
+                Map.of(),
+                Sort.RELEVANCE
+            );
+            segmentInfo.setFiles(Set.of());
+            final SegmentCommitInfo segmentCommitInfo = new SegmentCommitInfo(segmentInfo, 0, 0, 0, 0, 0, new byte[StringHelper.ID_LENGTH]);
+            when(reader.getSegmentInfo()).thenReturn(segmentCommitInfo);
+
+            final Path path = mock(Path.class);
+            when(directory.getDirectory()).thenReturn(path);
+            final FieldInfos fieldInfos = mock(FieldInfos.class);
+            final FieldInfo fieldInfo = mock(FieldInfo.class);
+            when(reader.getFieldInfos()).thenReturn(fieldInfos);
+            when(fieldInfos.fieldInfo(any())).thenReturn(fieldInfo);
+            when(fieldInfo.attributes()).thenReturn(
+                Map.of(
+                    SPACE_TYPE,
+                    spaceType.getValue(),
+                    KNN_ENGINE,
+                    KNNEngine.FAISS.getName(),
+                    PARAMETERS,
+                    String.format(Locale.ROOT, "{\"%s\":\"%s\"}", INDEX_DESCRIPTION_PARAMETER, "HNSW32")
+                )
+            );
+            when(fieldInfo.getAttribute(SPACE_TYPE)).thenReturn(spaceType.getValue());
+
+            KNNFloatVectorValues floatVectorValues = mock(KNNFloatVectorValues.class);
+            KNNVectorValuesIterator knnVectorValuesIterator = mock(KNNVectorValuesIterator.class);
+            when(knnVectorValuesIterator.getDocIdSetIterator()).thenReturn(DocIdSetIterator.all(2));
+            when(floatVectorValues.getVectorValuesIterator()).thenReturn(knnVectorValuesIterator);
+            valuesFactoryMockedStatic.when(() -> KNNVectorValuesFactory.getVectorValues(fieldInfo, reader)).thenReturn(floatVectorValues);
+            when(floatVectorValues.nextDoc()).thenReturn(0, 1, NO_MORE_DOCS);
+            when(floatVectorValues.getVector()).thenReturn(dataVectors.get(0), dataVectors.get(1));
+
+            ExactSearcher exactSearcher = new ExactSearcher(null);
+            exactSearcher.searchLeaf(leafReaderContext, context);
+
+            // Verify prefetch was called with the doc IDs from the BitSet
+            verify(floatVectorValues).prefetchByDocIds(new int[] { 0, 1 });
         }
     }
 }
