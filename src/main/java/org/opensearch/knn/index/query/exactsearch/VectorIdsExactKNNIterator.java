@@ -8,7 +8,6 @@ package org.opensearch.knn.index.query.exactsearch;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.opensearch.common.Nullable;
 import org.opensearch.knn.index.SpaceType;
-import org.opensearch.knn.index.query.TopDocsDISI;
 import org.opensearch.knn.index.query.SegmentLevelQuantizationInfo;
 import org.opensearch.knn.index.query.SegmentLevelQuantizationUtil;
 import org.opensearch.knn.index.vectorvalues.KNNFloatVectorValues;
@@ -60,10 +59,6 @@ class VectorIdsExactKNNIterator implements ExactKNNIterator {
         this.queryVector = queryVector;
         this.knnFloatVectorValues = knnFloatVectorValues;
         this.spaceType = spaceType;
-        // Prefetch vector data before scoring begins
-        if (filterIdsIterator instanceof TopDocsDISI topDocsDISI) {
-            knnFloatVectorValues.prefetchByDocIds(topDocsDISI.getSortedDocIds());
-        }
         // This cannot be moved inside nextDoc() method since it will break when we have nested field, where
         // nextDoc should already be referring to next knnVectorValues
         this.docId = getNextDocId();
