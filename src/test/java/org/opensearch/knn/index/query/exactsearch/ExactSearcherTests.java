@@ -359,6 +359,9 @@ public class ExactSearcherTests extends KNNTestCase {
             when(fieldInfo.getAttribute(SPACE_TYPE)).thenReturn(spaceType.getValue());
 
             KNNFloatVectorValues floatVectorValues = mock(KNNFloatVectorValues.class);
+            KNNVectorValuesIterator knnVectorValuesIterator = mock(KNNVectorValuesIterator.class);
+            when(knnVectorValuesIterator.getDocIdSetIterator()).thenReturn(DocIdSetIterator.all(2));
+            when(floatVectorValues.getVectorValuesIterator()).thenReturn(knnVectorValuesIterator);
             valuesFactoryMockedStatic.when(() -> KNNVectorValuesFactory.getVectorValues(fieldInfo, reader)).thenReturn(floatVectorValues);
             when(floatVectorValues.nextDoc()).thenReturn(0, 1, NO_MORE_DOCS);
             when(floatVectorValues.getVector()).thenReturn(dataVectors.get(0), dataVectors.get(1));
@@ -378,8 +381,7 @@ public class ExactSearcherTests extends KNNTestCase {
             final SpaceType spaceType = SpaceType.L2;
             final List<float[]> dataVectors = Arrays.asList(new float[] { 1.0f, 2.0f, 3.0f }, new float[] { 4.0f, 5.0f, 6.0f });
 
-            final DocIdSetIterator regularIterator = mock(DocIdSetIterator.class);
-            when(regularIterator.nextDoc()).thenReturn(0, 1, NO_MORE_DOCS);
+            final DocIdSetIterator regularIterator = DocIdSetIterator.all(2);
 
             final ExactSearcher.ExactSearcherContext context = ExactSearcher.ExactSearcherContext.builder()
                 .matchedDocsIterator(regularIterator)
@@ -432,6 +434,9 @@ public class ExactSearcherTests extends KNNTestCase {
             when(fieldInfo.getAttribute(SPACE_TYPE)).thenReturn(spaceType.getValue());
 
             KNNFloatVectorValues floatVectorValues = mock(KNNFloatVectorValues.class);
+            KNNVectorValuesIterator knnVectorValuesIterator = mock(KNNVectorValuesIterator.class);
+            when(knnVectorValuesIterator.getDocIdSetIterator()).thenReturn(DocIdSetIterator.all(2));
+            when(floatVectorValues.getVectorValuesIterator()).thenReturn(knnVectorValuesIterator);
             valuesFactoryMockedStatic.when(() -> KNNVectorValuesFactory.getVectorValues(fieldInfo, reader)).thenReturn(floatVectorValues);
             when(floatVectorValues.nextDoc()).thenReturn(0, 1, NO_MORE_DOCS);
             when(floatVectorValues.getVector()).thenReturn(dataVectors.get(0), dataVectors.get(1));

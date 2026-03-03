@@ -31,6 +31,7 @@ import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.query.SegmentLevelQuantizationInfo;
 import org.opensearch.knn.index.query.SegmentLevelQuantizationUtil;
 import org.opensearch.knn.index.engine.KNNEngine;
+import org.opensearch.knn.index.query.TopDocsDISI;
 import org.opensearch.knn.index.vectorvalues.KNNBinaryVectorValues;
 import org.opensearch.knn.index.vectorvalues.KNNByteVectorValues;
 import org.opensearch.knn.index.vectorvalues.KNNFloatVectorValues;
@@ -175,6 +176,14 @@ public class ExactSearcher {
         final VectorDataType vectorDataType = FieldInfoExtractor.extractVectorDataType(fieldInfo);
         final SpaceType spaceType = FieldInfoExtractor.getSpaceType(modelDao, fieldInfo);
         boolean isNestedRequired = exactSearcherContext.getParentsFilter() != null;
+
+        // Prefetch vector data using the original iterator before wrapping in ConjunctionDISI.
+        // This allows instanceof checks to work correctly for TopDocsDISI and access to getSortedDocIds().
+        final DocIdSetIterator originalIterator = exactSearcherContext.getMatchedDocsIterator();
+        if (originalIterator instanceof TopDocsDISI topDocsDISI) {
+            final KNNVectorValues<?> vectorValues = KNNVectorValuesFactory.getVectorValues(fieldInfo, reader);
+            vectorValues.prefetchByDocIds(topDocsDISI.getSortedDocIds());
+        }
 
         // We need to create a new VectorValues instances as the new one will be used to iterate over the docIds in
         // conjunction with Matched Docs.
