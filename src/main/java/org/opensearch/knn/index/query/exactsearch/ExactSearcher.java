@@ -23,6 +23,7 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.search.join.BitSetProducer;
+import org.apache.lucene.util.BitSetIterator;
 import org.opensearch.common.Nullable;
 import org.opensearch.common.lucene.Lucene;
 import org.opensearch.knn.common.FieldInfoExtractor;
@@ -32,6 +33,7 @@ import org.opensearch.knn.index.query.SegmentLevelQuantizationInfo;
 import org.opensearch.knn.index.query.SegmentLevelQuantizationUtil;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.index.query.TopDocsDISI;
+import org.opensearch.knn.index.query.common.QueryUtils;
 import org.opensearch.knn.index.vectorvalues.KNNBinaryVectorValues;
 import org.opensearch.knn.index.vectorvalues.KNNByteVectorValues;
 import org.opensearch.knn.index.vectorvalues.KNNFloatVectorValues;
@@ -183,6 +185,9 @@ public class ExactSearcher {
         if (originalIterator instanceof TopDocsDISI topDocsDISI) {
             final KNNVectorValues<?> vectorValues = KNNVectorValuesFactory.getVectorValues(fieldInfo, reader);
             vectorValues.prefetchByDocIds(topDocsDISI.getSortedDocIds());
+        } else if (originalIterator instanceof BitSetIterator bitSetIterator) {
+            final KNNVectorValues<?> vectorValues = KNNVectorValuesFactory.getVectorValues(fieldInfo, reader);
+            vectorValues.prefetchByDocIds(QueryUtils.bitSetToIntArray(bitSetIterator.getBitSet()));
         }
 
         // We need to create a new VectorValues instances as the new one will be used to iterate over the docIds in
