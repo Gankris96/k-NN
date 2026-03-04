@@ -10,7 +10,6 @@ import org.opensearch.common.Nullable;
 import org.opensearch.knn.index.SpaceType;
 import org.opensearch.knn.index.query.SegmentLevelQuantizationInfo;
 import org.opensearch.knn.index.query.SegmentLevelQuantizationUtil;
-import org.opensearch.knn.index.query.common.QueryUtils;
 import org.opensearch.knn.index.vectorvalues.KNNFloatVectorValues;
 
 import org.opensearch.knn.plugin.script.KNNScoringUtil;
@@ -60,8 +59,6 @@ class VectorIdsExactKNNIterator implements ExactKNNIterator {
         this.queryVector = queryVector;
         this.knnFloatVectorValues = knnFloatVectorValues;
         this.spaceType = spaceType;
-        // try to prefetch vectors
-        QueryUtils.maybePrefetch(filterIdsIterator, knnFloatVectorValues);
         // This cannot be moved inside nextDoc() method since it will break when we have nested field, where
         // nextDoc should already be referring to next knnVectorValues
         this.docId = getNextDocId();
