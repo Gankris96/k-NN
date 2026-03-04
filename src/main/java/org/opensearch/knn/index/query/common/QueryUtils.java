@@ -19,9 +19,7 @@ import org.apache.lucene.util.BitSet;
 import org.apache.lucene.util.BitSetIterator;
 import org.apache.lucene.util.Bits;
 import org.opensearch.knn.index.query.KNNWeight;
-import org.opensearch.knn.index.query.TopDocsDISI;
 import org.opensearch.knn.index.query.iterators.GroupedNestedDocIdSetIterator;
-import org.opensearch.knn.index.vectorvalues.KNNVectorValues;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -205,22 +203,4 @@ public class QueryUtils {
         return intArray;
     }
 
-    /**
-     * Prefetches vector data if the iterator is TopDocsDISI or BitSetIterator.
-     *
-     * @param docIdSetIterator the iterator to check
-     * @param vectorValues the vector values to prefetch
-     * @throws IOException if an I/O error occurs during prefetch
-     */
-    public static void maybePrefetch(final DocIdSetIterator docIdSetIterator, final KNNVectorValues<?> vectorValues) throws IOException {
-        int[] docIdsToPrefetch = null;
-        if (docIdSetIterator instanceof TopDocsDISI topDocsDISI) {
-            docIdsToPrefetch = topDocsDISI.getSortedDocIds();
-        } else if (docIdSetIterator instanceof BitSetIterator bitSetIterator) {
-            docIdsToPrefetch = bitSetToIntArray(bitSetIterator.getBitSet());
-        }
-        if (docIdsToPrefetch != null) {
-            vectorValues.prefetchByDocIds(docIdsToPrefetch);
-        }
-    }
 }
