@@ -25,6 +25,7 @@ class ByteVectorIdsExactKNNIterator implements ExactKNNIterator {
     protected final SpaceType spaceType;
     protected float currentScore = Float.NEGATIVE_INFINITY;
     protected int docId;
+    protected final PrefetchStrategy prefetchStrategy;
 
     public ByteVectorIdsExactKNNIterator(
         @Nullable final DocIdSetIterator filterIdsIterator,
@@ -32,19 +33,29 @@ class ByteVectorIdsExactKNNIterator implements ExactKNNIterator {
         final KNNByteVectorValues byteVectorValues,
         final SpaceType spaceType
     ) throws IOException {
-        this.filterIdsIterator = filterIdsIterator;
-        this.queryVector = queryVector;
-        this.byteVectorValues = byteVectorValues;
-        this.spaceType = spaceType;
-
-        // This cannot be moved inside nextDoc() method since it will break when we have nested field, where
-        // nextDoc should already be referring to next knnVectorValues
-        this.docId = getNextDocId();
+        this(filterIdsIterator, queryVector, byteVectorValues, spaceType, PrefetchStrategy.NOOP);
     }
 
     public ByteVectorIdsExactKNNIterator(final float[] queryVector, final KNNByteVectorValues byteVectorValues, final SpaceType spaceType)
         throws IOException {
-        this(null, queryVector, byteVectorValues, spaceType);
+        this(null, queryVector, byteVectorValues, spaceType, PrefetchStrategy.NOOP);
+    }
+
+    public ByteVectorIdsExactKNNIterator(
+        @Nullable final DocIdSetIterator filterIdsIterator,
+        final float[] queryVector,
+        final KNNByteVectorValues byteVectorValues,
+        final SpaceType spaceType,
+        final PrefetchStrategy prefetchStrategy
+    ) throws IOException {
+        this.filterIdsIterator = filterIdsIterator;
+        this.queryVector = queryVector;
+        this.byteVectorValues = byteVectorValues;
+        this.spaceType = spaceType;
+        // This cannot be moved inside nextDoc() method since it will break when we have nested field, where
+        // nextDoc should already be referring to next knnVectorValues
+        this.docId = getNextDocId();
+        this.prefetchStrategy = prefetchStrategy;
     }
 
     /**
@@ -59,6 +70,7 @@ class ByteVectorIdsExactKNNIterator implements ExactKNNIterator {
         if (docId == DocIdSetIterator.NO_MORE_DOCS) {
             return DocIdSetIterator.NO_MORE_DOCS;
         }
+        prefetchStrategy.maybePrefetch(docId);
         currentScore = computeScore();
         int currentDocId = docId;
         docId = getNextDocId();

@@ -32,6 +32,7 @@ class VectorIdsExactKNNIterator implements ExactKNNIterator {
     protected float currentScore = Float.NEGATIVE_INFINITY;
     protected int docId;
     private final SegmentLevelQuantizationInfo segmentLevelQuantizationInfo;
+    protected final PrefetchStrategy prefetchStrategy;
 
     public VectorIdsExactKNNIterator(
         @Nullable final DocIdSetIterator filterIdsIterator,
@@ -39,12 +40,12 @@ class VectorIdsExactKNNIterator implements ExactKNNIterator {
         final KNNFloatVectorValues knnFloatVectorValues,
         final SpaceType spaceType
     ) throws IOException {
-        this(filterIdsIterator, queryVector, knnFloatVectorValues, spaceType, null, null);
+        this(filterIdsIterator, queryVector, knnFloatVectorValues, spaceType, null, null, PrefetchStrategy.NOOP);
     }
 
     public VectorIdsExactKNNIterator(final float[] queryVector, final KNNFloatVectorValues knnFloatVectorValues, final SpaceType spaceType)
         throws IOException {
-        this(null, queryVector, knnFloatVectorValues, spaceType, null, null);
+        this(null, queryVector, knnFloatVectorValues, spaceType, null, null, PrefetchStrategy.NOOP);
     }
 
     public VectorIdsExactKNNIterator(
@@ -55,6 +56,26 @@ class VectorIdsExactKNNIterator implements ExactKNNIterator {
         final byte[] quantizedQueryVector,
         final SegmentLevelQuantizationInfo segmentLevelQuantizationInfo
     ) throws IOException {
+        this(
+            filterIdsIterator,
+            queryVector,
+            knnFloatVectorValues,
+            spaceType,
+            quantizedQueryVector,
+            segmentLevelQuantizationInfo,
+            PrefetchStrategy.NOOP
+        );
+    }
+
+    public VectorIdsExactKNNIterator(
+        @Nullable final DocIdSetIterator filterIdsIterator,
+        final float[] queryVector,
+        final KNNFloatVectorValues knnFloatVectorValues,
+        final SpaceType spaceType,
+        final byte[] quantizedQueryVector,
+        final SegmentLevelQuantizationInfo segmentLevelQuantizationInfo,
+        final PrefetchStrategy prefetchStrategy
+    ) throws IOException {
         this.filterIdsIterator = filterIdsIterator;
         this.queryVector = queryVector;
         this.knnFloatVectorValues = knnFloatVectorValues;
@@ -64,6 +85,7 @@ class VectorIdsExactKNNIterator implements ExactKNNIterator {
         this.docId = getNextDocId();
         this.quantizedQueryVector = quantizedQueryVector;
         this.segmentLevelQuantizationInfo = segmentLevelQuantizationInfo;
+        this.prefetchStrategy = prefetchStrategy;
     }
 
     /**
@@ -78,6 +100,7 @@ class VectorIdsExactKNNIterator implements ExactKNNIterator {
         if (docId == DocIdSetIterator.NO_MORE_DOCS) {
             return DocIdSetIterator.NO_MORE_DOCS;
         }
+        prefetchStrategy.maybePrefetch(docId);
         currentScore = computeScore();
         int currentDocId = docId;
         docId = getNextDocId();

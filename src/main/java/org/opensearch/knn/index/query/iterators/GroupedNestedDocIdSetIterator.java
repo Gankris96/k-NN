@@ -26,7 +26,7 @@ public class GroupedNestedDocIdSetIterator extends DocIdSetIterator {
     private final BitSet parentBitSet;
     private final Bits filterBits;
     private final List<Integer> docIds;
-    private long cost;
+    private int[] expandedDocIds;
     private int currentIndex;
     private int currentDocId;
     private int currentParentId;
@@ -38,7 +38,6 @@ public class GroupedNestedDocIdSetIterator extends DocIdSetIterator {
         this.filterBits = filterBits;
         currentIndex = -1;
         currentDocId = -1;
-        cost = -1;
     }
 
     @Override
@@ -90,14 +89,22 @@ public class GroupedNestedDocIdSetIterator extends DocIdSetIterator {
 
     @Override
     public long cost() {
-        if (cost == -1) {
-            cost = calculateCost();
-        }
-        return cost;
+        return getExpandedDocIds().length;
     }
 
-    private long calculateCost() {
-        long numDocs = 0;
+    /**
+     * Returns all child doc IDs that this iterator will visit, in sorted order,
+     * without consuming the iterator. Computed lazily and cached.
+     */
+    public int[] getExpandedDocIds() {
+        if (expandedDocIds == null) {
+            expandedDocIds = computeExpandedDocIds();
+        }
+        return expandedDocIds;
+    }
+
+    private int[] computeExpandedDocIds() {
+        final List<Integer> result = new ArrayList<>();
         int lastDocId = -1;
         for (int docId : docIds) {
             if (docId < lastDocId) {
@@ -106,11 +113,15 @@ public class GroupedNestedDocIdSetIterator extends DocIdSetIterator {
 
             for (lastDocId = parentBitSet.prevSetBit(docId) + 1; lastDocId < parentBitSet.nextSetBit(docId); lastDocId++) {
                 if (filterBits.get(lastDocId)) {
-                    numDocs++;
+                    result.add(lastDocId);
                 }
             }
         }
-        return numDocs;
+        final int[] expandedDocIdsArray = new int[result.size()];
+        for (int i = 0; i < result.size(); i++) {
+            expandedDocIdsArray[i] = result.get(i);
+        }
+        return expandedDocIdsArray;
     }
 
     private void moveToNextIndex() {
