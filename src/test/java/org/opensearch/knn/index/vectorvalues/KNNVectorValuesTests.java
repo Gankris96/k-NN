@@ -17,7 +17,13 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyInt;
+import org.mockito.ArgumentCaptor;
 
 public class KNNVectorValuesTests extends KNNTestCase {
 
@@ -172,6 +178,100 @@ public class KNNVectorValuesTests extends KNNTestCase {
 
         // prefetchByDocIds should return early without any side effects
         knnFloatVectorValues.prefetchByDocIds(new int[] { 0, 1 });
+    }
+
+    @SneakyThrows
+    public void testPrefetchByDocIds_whenSparseVectorField_thenSkipsDocsWithoutVectors() {
+        // Sparse vector field: vectors exist on docs {3, 10} only
+        // sortedDocIds = [3, 5, 7, 10]
+        //
+        // advance(3) → 3 (has vector, record ord)
+        // advance(5) → 10 (5 has no vector, overshoots to 10)
+        // - skip doc 5 (landed != 5)
+        // - skip doc 7 without calling advance (iterator already at 10, 10 > 7)
+        // - doc 10: iterator already at 10, no advance needed, record ord
+        final FloatVectorValues mockKnnVectorValues = mock(FloatVectorValues.class);
+        final FloatVectorValues mockCopy = mock(FloatVectorValues.class);
+        final KnnVectorValues.DocIndexIterator mockIterator = mock(KnnVectorValues.DocIndexIterator.class);
+        final KnnVectorValues.DocIndexIterator mockCopyIterator = mock(KnnVectorValues.DocIndexIterator.class);
+
+        when(mockKnnVectorValues.iterator()).thenReturn(mockIterator);
+        when(mockKnnVectorValues.copy()).thenReturn(mockCopy);
+        when(mockCopy.iterator()).thenReturn(mockCopyIterator);
+
+        when(mockCopyIterator.advance(3)).thenReturn(3);
+        when(mockCopyIterator.advance(5)).thenReturn(10);  // overshoots past 7 and 10
+
+        // ords: doc 3 → ord 0, doc 10 → ord 3
+        when(mockCopyIterator.index()).thenReturn(0, 3);
+
+        final KNNVectorValuesIterator.DocIdsIteratorValues docIdsIteratorValues = new KNNVectorValuesIterator.DocIdsIteratorValues(
+            mockKnnVectorValues
+        );
+        final KNNFloatVectorValues knnFloatVectorValues = new KNNFloatVectorValues(docIdsIteratorValues);
+
+        final int[] sortedDocIds = new int[] { 3, 5, 7, 10 };
+        knnFloatVectorValues.prefetchByDocIds(sortedDocIds);
+
+        // Should prefetch only ords for docs 3 and 10
+        // advance(7) and advance(10) must NOT be called — iterator already at 10
+        verify(mockCopyIterator, never()).advance(7);
+        verify(mockCopyIterator, never()).advance(10);
+
+        ArgumentCaptor<int[]> ordsCaptor = ArgumentCaptor.forClass(int[].class);
+        ArgumentCaptor<Integer> countCaptor = ArgumentCaptor.forClass(Integer.class);
+        verify(mockKnnVectorValues).prefetch(ordsCaptor.capture(), countCaptor.capture());
+        assertEquals(2, (int) countCaptor.getValue());
+        assertEquals(0, ordsCaptor.getValue()[0]);
+        assertEquals(3, ordsCaptor.getValue()[1]);
+    }
+
+    @SneakyThrows
+    public void testPrefetchByDocIds_whenSparseVectorFieldAlternate_thenSkipsDocsWithoutVectors() {
+        // Sparse vector field: vectors exist on docs {3, 7} only
+        // sortedDocIds = [3, 5, 7, 10]
+        //
+        // advance(3) → 3 (has vector, record ord)
+        // advance(5) → 7 (5 has no vector, overshoots to 7)
+        // - skip doc 5 (landed != 5)
+        // - doc 7: iterator already at 7, no advance needed, record ord
+        // advance(10) → NO_MORE_DOCS (10 has no vector, no more vectors after 7)
+        // - skip doc 10
+        final FloatVectorValues mockKnnVectorValues = mock(FloatVectorValues.class);
+        final FloatVectorValues mockCopy = mock(FloatVectorValues.class);
+        final KnnVectorValues.DocIndexIterator mockIterator = mock(KnnVectorValues.DocIndexIterator.class);
+        final KnnVectorValues.DocIndexIterator mockCopyIterator = mock(KnnVectorValues.DocIndexIterator.class);
+
+        when(mockKnnVectorValues.iterator()).thenReturn(mockIterator);
+        when(mockKnnVectorValues.copy()).thenReturn(mockCopy);
+        when(mockCopy.iterator()).thenReturn(mockCopyIterator);
+
+        when(mockCopyIterator.advance(3)).thenReturn(3);
+        when(mockCopyIterator.advance(5)).thenReturn(7);   // overshoots to 7
+        when(mockCopyIterator.advance(10)).thenReturn(DocIdSetIterator.NO_MORE_DOCS);
+
+        // ords: doc 3 → ord 0, doc 7 → ord 2
+        when(mockCopyIterator.index()).thenReturn(0, 2);
+
+        final KNNVectorValuesIterator.DocIdsIteratorValues docIdsIteratorValues = new KNNVectorValuesIterator.DocIdsIteratorValues(
+            mockKnnVectorValues
+        );
+        final KNNFloatVectorValues knnFloatVectorValues = new KNNFloatVectorValues(docIdsIteratorValues);
+
+        final int[] sortedDocIds = new int[] { 3, 5, 7, 10 };
+        knnFloatVectorValues.prefetchByDocIds(sortedDocIds);
+
+        // advance(7) must NOT be called — iterator already at 7 from advance(5) overshoot
+        verify(mockCopyIterator, never()).advance(7);
+        // advance(10) IS called since iterator was at 7 < 10, returns NO_MORE_DOCS
+        verify(mockCopyIterator).advance(10);
+
+        ArgumentCaptor<int[]> ordsCaptor = ArgumentCaptor.forClass(int[].class);
+        ArgumentCaptor<Integer> countCaptor = ArgumentCaptor.forClass(Integer.class);
+        verify(mockKnnVectorValues).prefetch(ordsCaptor.capture(), countCaptor.capture());
+        assertEquals(2, (int) countCaptor.getValue());
+        assertEquals(0, ordsCaptor.getValue()[0]);
+        assertEquals(2, ordsCaptor.getValue()[1]);
     }
 
     private class CompareVectorValues<T> {

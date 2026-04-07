@@ -170,12 +170,19 @@ public interface KNNVectorValuesIterator {
             final KnnVectorValues knnVectorValuesCopy = knnVectorValues.copy();
             final KnnVectorValues.DocIndexIterator ordIterator = knnVectorValuesCopy.iterator();
             final int[] ordsToPrefetch = new int[sortedDocIds.length];
+            int count = 0;
+            int docIdWithVectorValue = -1;
             for (int i = 0; i < sortedDocIds.length; i++) {
-                ordIterator.advance(sortedDocIds[i]);
-                ordsToPrefetch[i] = ordIterator.index();
+                int currentDocId = sortedDocIds[i];
+                if (docIdWithVectorValue < currentDocId) {
+                    docIdWithVectorValue = ordIterator.advance(currentDocId);
+                }
+                if (docIdWithVectorValue == currentDocId) {
+                    ordsToPrefetch[count++] = ordIterator.index();
+                }
             }
 
-            knnVectorValues.prefetch(ordsToPrefetch, ordsToPrefetch.length);
+            knnVectorValues.prefetch(ordsToPrefetch, count);
         }
 
     }
