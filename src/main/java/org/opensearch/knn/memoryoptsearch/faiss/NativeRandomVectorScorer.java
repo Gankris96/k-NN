@@ -38,6 +38,12 @@ public class NativeRandomVectorScorer implements RandomVectorScorer {
     // Index value of the native similarity function type.
     private int nativeFunctionTypeOrd;
 
+    // Accumulated wall-clock time spent in prefetch() calls, in nanoseconds.
+    private long prefetchTimeNanos;
+
+    // Number of prefetch() invocations during this scorer's lifetime.
+    private int prefetchCount;
+
     /**
      * Constructs a native-backed scorer for computing similarity between the given query
      * vector and a set of memory-mapped vectors.
@@ -62,7 +68,24 @@ public class NativeRandomVectorScorer implements RandomVectorScorer {
 
     @Override
     public void prefetch(int[] prefetchOrds, int ordsCount) throws IOException {
+        long start = System.nanoTime();
         knnVectorValues.prefetch(prefetchOrds, ordsCount);
+        prefetchTimeNanos += System.nanoTime() - start;
+        prefetchCount++;
+    }
+
+    /**
+     * Returns the total wall-clock time spent in {@link #prefetch} calls, in nanoseconds.
+     */
+    public long getPrefetchTimeNanos() {
+        return prefetchTimeNanos;
+    }
+
+    /**
+     * Returns the number of times {@link #prefetch} has been invoked.
+     */
+    public int getPrefetchCount() {
+        return prefetchCount;
     }
 
     /**

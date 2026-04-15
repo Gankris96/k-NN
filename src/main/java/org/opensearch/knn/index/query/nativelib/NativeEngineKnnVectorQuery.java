@@ -86,6 +86,8 @@ public class NativeEngineKnnVectorQuery extends Query {
 
     @Override
     public Weight createWeight(IndexSearcher indexSearcher, ScoreMode scoreMode, float boost) throws IOException {
+        final long shardStartNanos = System.nanoTime();
+
         // Create Weight depending on whether 2-phase search is needed
         final boolean isShardLevelRescoringDisabled = KNNSettings.isShardLevelRescoringDisabledForDiskBasedVector(knnQuery.getIndexName());
         final Integer firstPassKFor2PhaseSearch = getFirstPassK(isShardLevelRescoringDisabled);
@@ -108,23 +110,32 @@ public class NativeEngineKnnVectorQuery extends Query {
         List<LeafReaderContext> leafReaderContexts = reader.leaves();
         List<PerLeafResult> perLeafResults;
         final int finalK = knnQuery.getK();
+
+        long annNanos = 0;
+        long rescoreNanos = 0;
+
         if (isRescoreRequired(firstPassKFor2PhaseSearch) == false) {
+            log.info("[KNN_LATENCY] ann_phase_start shard={} segments={}", knnQuery.getShardId(), leafReaderContexts.size());
+            long annStart = System.nanoTime();
             perLeafResults = doSearch(indexSearcher, leafReaderContexts, knnWeight, finalK);
+            annNanos = System.nanoTime() - annStart;
+            log.info("[KNN_LATENCY] ann_phase_end shard={} ann_ms={}", knnQuery.getShardId(), annNanos / 1_000_000.0);
         } else {
+            log.info("[KNN_LATENCY] ann_phase_start shard={} segments={}", knnQuery.getShardId(), leafReaderContexts.size());
+            long annStart = System.nanoTime();
             perLeafResults = doSearch(indexSearcher, leafReaderContexts, knnWeight, firstPassKFor2PhaseSearch);
+            annNanos = System.nanoTime() - annStart;
+            log.info("[KNN_LATENCY] ann_phase_end shard={} ann_ms={}", knnQuery.getShardId(), annNanos / 1_000_000.0);
+
             if (isShardLevelRescoringDisabled == false) {
                 ResultUtil.reduceToTopK(perLeafResults, firstPassKFor2PhaseSearch);
             }
 
-            StopWatch stopWatch = new StopWatch().start();
+            log.info("[KNN_LATENCY] rescore_phase_start shard={} segments={}", knnQuery.getShardId(), leafReaderContexts.size());
+            long rescoreStart = System.nanoTime();
             perLeafResults = doRescore(indexSearcher, leafReaderContexts, knnWeight, perLeafResults, finalK);
-            long rescoreTime = stopWatch.stop().totalTime().millis();
-            log.debug(
-                "Rescoring results took {} ms. oversampled k:{}, segments:{}",
-                rescoreTime,
-                firstPassKFor2PhaseSearch,
-                leafReaderContexts.size()
-            );
+            rescoreNanos = System.nanoTime() - rescoreStart;
+            log.info("[KNN_LATENCY] rescore_phase_end shard={} rescore_ms={}", knnQuery.getShardId(), rescoreNanos / 1_000_000.0);
         }
         ResultUtil.reduceToTopK(perLeafResults, finalK);
 
@@ -144,6 +155,16 @@ public class NativeEngineKnnVectorQuery extends Query {
                 log.debug("Expanding of nested docs took {} ms. totalNestedDocs:{} ", time_in_millis, totalNestedDocs);
             }
         }
+
+        long shardTotalNanos = System.nanoTime() - shardStartNanos;
+        log.info(
+            "[KNN_LATENCY] shard_query shard={} total_ms={} ann_ms={} rescore_ms={} segments={}",
+            knnQuery.getShardId(),
+            shardTotalNanos / 1_000_000.0,
+            annNanos / 1_000_000.0,
+            rescoreNanos / 1_000_000.0,
+            leafReaderContexts.size()
+        );
 
         TopDocs[] topDocs = new TopDocs[perLeafResults.size()];
         for (int i = 0; i < perLeafResults.size(); i++) {

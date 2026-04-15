@@ -64,7 +64,16 @@ public class PrefetchHelper {
             return;
         }
         if (KNNFeatureFlags.isPrefetchEnabled()) {
-            prefetchExactVectorSize(indexInput, baseOffset, oneVectorByteSize, ordsToPrefetch, numOrds);
+            long start = System.nanoTime();
+            int prefetchCalls = prefetchExactVectorSize(indexInput, baseOffset, oneVectorByteSize, ordsToPrefetch, numOrds);
+            long elapsedNanos = System.nanoTime() - start;
+            log.info(
+                "[KNN_LATENCY] prefetch thread={} num_ords={} prefetch_calls={} time_ms={}",
+                Thread.currentThread().getName(),
+                numOrds,
+                prefetchCalls,
+                elapsedNanos / 1_000_000.0
+            );
         } else {
             log.debug("KNNVectors Prefetch is disabled");
         }
@@ -82,7 +91,7 @@ public class PrefetchHelper {
      * @param numOrds number of valid ordinals in the array
      * @throws IOException if an I/O error occurs during prefetch
      */
-    private static void prefetchExactVectorSize(
+    private static int prefetchExactVectorSize(
         final IndexInput indexInput,
         final long baseOffset,
         final long oneVectorByteSize,
@@ -106,6 +115,7 @@ public class PrefetchHelper {
         indexInput.prefetch(groupStartOffset, finalLength);
 
         log.trace("Prefetching compressed [{}] vectors where num of ords was [{}] using exact prefetch size", groupCount, numOrds);
+        return groupCount;
     }
 
     /**

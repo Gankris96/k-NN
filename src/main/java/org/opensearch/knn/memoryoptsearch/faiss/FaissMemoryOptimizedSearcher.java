@@ -46,6 +46,10 @@ public class FaissMemoryOptimizedSearcher implements VectorSearcher {
     private boolean isAdc;
     private SimdVectorComputeService.SimilarityFunctionType nativeSimilarityFunctionType;
 
+    // Prefetch stats from the most recent search() invocation.
+    private long lastSearchPrefetchTimeNanos;
+    private int lastSearchPrefetchCount;
+
     public FaissMemoryOptimizedSearcher(final IndexInput indexInput, final FieldInfo fieldInfo) throws IOException {
         this.indexInput = indexInput;
         this.fileSize = indexInput.length();
@@ -136,6 +140,20 @@ public class FaissMemoryOptimizedSearcher implements VectorSearcher {
         indexInput.close();
     }
 
+    /**
+     * Returns the total prefetch time in nanoseconds from the most recent search invocation.
+     */
+    public long getLastSearchPrefetchTimeNanos() {
+        return lastSearchPrefetchTimeNanos;
+    }
+
+    /**
+     * Returns the prefetch call count from the most recent search invocation.
+     */
+    public int getLastSearchPrefetchCount() {
+        return lastSearchPrefetchCount;
+    }
+
     private void search(
         final VectorEncoding vectorEncoding,
         final IOSupplier<RandomVectorScorer> scorerSupplier,
@@ -178,6 +196,15 @@ public class FaissMemoryOptimizedSearcher implements VectorSearcher {
                     }
                 }
             }
+        }
+
+        // Capture prefetch stats from the scorer if it supports instrumentation.
+        if (scorer instanceof NativeRandomVectorScorer nativeScorer) {
+            lastSearchPrefetchTimeNanos = nativeScorer.getPrefetchTimeNanos();
+            lastSearchPrefetchCount = nativeScorer.getPrefetchCount();
+        } else {
+            lastSearchPrefetchTimeNanos = 0;
+            lastSearchPrefetchCount = 0;
         }
     }
 

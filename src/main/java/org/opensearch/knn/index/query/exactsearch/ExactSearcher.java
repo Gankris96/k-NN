@@ -184,10 +184,25 @@ public class ExactSearcher {
         final DocIdSetIterator originalIterator = exactSearcherContext.getMatchedDocsIterator();
         if (originalIterator instanceof TopDocsDISI topDocsDISI) {
             final KNNVectorValues<?> vectorValues = KNNVectorValuesFactory.getVectorValues(fieldInfo, reader);
+            long prefetchStart = System.nanoTime();
             vectorValues.prefetchByDocIds(topDocsDISI.getSortedDocIds());
+            log.info(
+                "[KNN_LATENCY] rescore_prefetch thread={} num_docs={} time_ms={}",
+                Thread.currentThread().getName(),
+                topDocsDISI.getSortedDocIds().length,
+                (System.nanoTime() - prefetchStart) / 1_000_000.0
+            );
         } else if (originalIterator instanceof BitSetIterator bitSetIterator) {
             final KNNVectorValues<?> vectorValues = KNNVectorValuesFactory.getVectorValues(fieldInfo, reader);
-            vectorValues.prefetchByDocIds(QueryUtils.bitSetToIntArray(bitSetIterator.getBitSet()));
+            int[] docIds = QueryUtils.bitSetToIntArray(bitSetIterator.getBitSet());
+            long prefetchStart = System.nanoTime();
+            vectorValues.prefetchByDocIds(docIds);
+            log.info(
+                "[KNN_LATENCY] rescore_prefetch thread={} num_docs={} time_ms={}",
+                Thread.currentThread().getName(),
+                docIds.length,
+                (System.nanoTime() - prefetchStart) / 1_000_000.0
+            );
         }
 
         // We need to create a new VectorValues instances as the new one will be used to iterate over the docIds in
