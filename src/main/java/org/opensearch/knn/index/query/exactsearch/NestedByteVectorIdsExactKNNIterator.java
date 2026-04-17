@@ -28,8 +28,7 @@ class NestedByteVectorIdsExactKNNIterator extends ByteVectorIdsExactKNNIterator 
         final SpaceType spaceType,
         final BitSet parentBitSet
     ) throws IOException {
-        super(filterIdsIterator, queryVector, byteVectorValues, spaceType);
-        this.parentBitSet = parentBitSet;
+        this(filterIdsIterator, queryVector, byteVectorValues, spaceType, parentBitSet, PrefetchStrategy.NOOP);
     }
 
     public NestedByteVectorIdsExactKNNIterator(
@@ -38,7 +37,18 @@ class NestedByteVectorIdsExactKNNIterator extends ByteVectorIdsExactKNNIterator 
         final SpaceType spaceType,
         final BitSet parentBitSet
     ) throws IOException {
-        super(null, queryVector, binaryVectorValues, spaceType);
+        this(null, queryVector, binaryVectorValues, spaceType, parentBitSet, PrefetchStrategy.NOOP);
+    }
+
+    public NestedByteVectorIdsExactKNNIterator(
+        @Nullable final DocIdSetIterator filterIdsIterator,
+        final float[] queryVector,
+        final KNNByteVectorValues byteVectorValues,
+        final SpaceType spaceType,
+        final BitSet parentBitSet,
+        final PrefetchStrategy prefetchStrategy
+    ) throws IOException {
+        super(filterIdsIterator, queryVector, byteVectorValues, spaceType, prefetchStrategy);
         this.parentBitSet = parentBitSet;
     }
 
@@ -64,6 +74,7 @@ class NestedByteVectorIdsExactKNNIterator extends ByteVectorIdsExactKNNIterator 
         // and parentBitSet will have [1,5]
         // Hence, we have to iterate till docId from knnVectorValues is less than parentId instead of till equal to parentId
         while (docId != DocIdSetIterator.NO_MORE_DOCS && docId < currentParent) {
+            prefetchStrategy.maybePrefetch(docId);
             float score = computeScore();
             if (score > currentScore) {
                 bestChild = docId;

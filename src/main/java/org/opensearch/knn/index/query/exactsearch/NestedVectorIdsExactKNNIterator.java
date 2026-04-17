@@ -29,7 +29,7 @@ class NestedVectorIdsExactKNNIterator extends VectorIdsExactKNNIterator {
         final SpaceType spaceType,
         final BitSet parentBitSet
     ) throws IOException {
-        this(filterIdsIterator, queryVector, knnFloatVectorValues, spaceType, parentBitSet, null, null);
+        this(filterIdsIterator, queryVector, knnFloatVectorValues, spaceType, parentBitSet, null, null, PrefetchStrategy.NOOP);
     }
 
     public NestedVectorIdsExactKNNIterator(
@@ -38,7 +38,7 @@ class NestedVectorIdsExactKNNIterator extends VectorIdsExactKNNIterator {
         final SpaceType spaceType,
         final BitSet parentBitSet
     ) throws IOException {
-        this(null, queryVector, knnFloatVectorValues, spaceType, parentBitSet, null, null);
+        this(null, queryVector, knnFloatVectorValues, spaceType, parentBitSet, null, null, PrefetchStrategy.NOOP);
     }
 
     public NestedVectorIdsExactKNNIterator(
@@ -50,7 +50,37 @@ class NestedVectorIdsExactKNNIterator extends VectorIdsExactKNNIterator {
         final byte[] quantizedVector,
         final SegmentLevelQuantizationInfo segmentLevelQuantizationInfo
     ) throws IOException {
-        super(filterIdsIterator, queryVector, knnFloatVectorValues, spaceType, quantizedVector, segmentLevelQuantizationInfo);
+        this(
+            filterIdsIterator,
+            queryVector,
+            knnFloatVectorValues,
+            spaceType,
+            parentBitSet,
+            quantizedVector,
+            segmentLevelQuantizationInfo,
+            PrefetchStrategy.NOOP
+        );
+    }
+
+    public NestedVectorIdsExactKNNIterator(
+        @Nullable final DocIdSetIterator filterIdsIterator,
+        final float[] queryVector,
+        final KNNFloatVectorValues knnFloatVectorValues,
+        final SpaceType spaceType,
+        final BitSet parentBitSet,
+        final byte[] quantizedVector,
+        final SegmentLevelQuantizationInfo segmentLevelQuantizationInfo,
+        final PrefetchStrategy prefetchStrategy
+    ) throws IOException {
+        super(
+            filterIdsIterator,
+            queryVector,
+            knnFloatVectorValues,
+            spaceType,
+            quantizedVector,
+            segmentLevelQuantizationInfo,
+            prefetchStrategy
+        );
         this.parentBitSet = parentBitSet;
     }
 
@@ -76,6 +106,7 @@ class NestedVectorIdsExactKNNIterator extends VectorIdsExactKNNIterator {
         // and parentBitSet will have [1,5]
         // Hence, we have to iterate till docId from knnVectorValues is less than parentId instead of till equal to parentId
         while (docId != DocIdSetIterator.NO_MORE_DOCS && docId < currentParent) {
+            prefetchStrategy.maybePrefetch(docId);
             float score = computeScore();
             if (score > currentScore) {
                 bestChild = docId;
